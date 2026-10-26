@@ -6,40 +6,14 @@ import ply.lex as lex
 # --------------------------------------------------
 
 tokens = (
-    'CHARACTER',
-    'IDENTIFIER',
-    'NUMBER',
-    'STRING',
-
-    'PLUS',
-    'MINUS',
-    'MULTIPLY',
-    'DIVIDE',
-    'MODULO',
-
-    'ASSIGN',
-    'EQUAL',
-    'NOT_EQUAL',
-    'GREATER',
-    'LESS',
-    'GREATER_EQUAL',
-    'LESS_EQUAL',
-
-    'SEMICOLON',
-    'COMMA',
-
-    'LPAREN',
-    'RPAREN',
-    'LBRACE',
-    'RBRACE',
-    'LBRACKET',
-    'RBRACKET'
+    'CHARACTER', 'IDENTIFIER', 'NUMBER', 'STRING',
+    'PLUS', 'MINUS', 'MULTIPLY', 'DIVIDE', 'MODULO',
+    'ASSIGN', 'EQUAL', 'NOT_EQUAL', 'GREATER', 'LESS',
+    'GREATER_EQUAL', 'LESS_EQUAL',
+    'SEMICOLON', 'COMMA',
+    'LPAREN', 'RPAREN', 'LBRACE', 'RBRACE',
+    'LBRACKET', 'RBRACKET'
 )
-
-
-# --------------------------------------------------
-# 2. KEYWORDS
-# --------------------------------------------------
 
 reserved = {
     'int': 'INT',
@@ -52,24 +26,22 @@ reserved = {
     'printf': 'PRINTF'
 }
 
-
-# Add keyword token names to the token list
 tokens = tokens + tuple(reserved.values())
 
 
 # --------------------------------------------------
-# 3. HELPERS FOR ERROR REPORTING
+# 2. ERROR REPORTING HELPERS
 # --------------------------------------------------
 
 def find_column(data, position):
-    """Return the 1-based column of an absolute offset in the source."""
+    """Return the 1-based column of an absolute source offset."""
     return position - data.rfind('\n', 0, position)
 
 
-def report_error(t, message):
-    """Record a lexical error at the start of the current match."""
+def report_error(t, message, error_type="Lexical Error"):
+    """Record an error at the start of the current match."""
     t.lexer.errors.append({
-        "type": "Lexical Error",
+        "type": error_type,
         "message": message,
         "line": t.lineno,
         "column": find_column(t.lexer.lexdata, t.lexpos)
@@ -77,7 +49,7 @@ def report_error(t, message):
 
 
 # --------------------------------------------------
-# 4. SIMPLE OPERATORS
+# 3. OPERATORS
 # --------------------------------------------------
 
 t_PLUS = r'\+'
@@ -86,47 +58,32 @@ t_MULTIPLY = r'\*'
 t_DIVIDE = r'/'
 t_MODULO = r'%'
 
-t_ASSIGN = r'='
-
-
-# --------------------------------------------------
-# 5. COMPARISON OPERATORS
-# --------------------------------------------------
-
-# PLY sorts string rules by decreasing regex length, so '==' is tried
-# before '=' and '>=' before '>'.
-
 t_EQUAL = r'=='
 t_NOT_EQUAL = r'!='
 t_GREATER_EQUAL = r'>='
 t_LESS_EQUAL = r'<='
 t_GREATER = r'>'
 t_LESS = r'<'
+t_ASSIGN = r'='
 
 
 # --------------------------------------------------
-# 6. DELIMITERS
+# 4. DELIMITERS
 # --------------------------------------------------
 
 t_SEMICOLON = r';'
 t_COMMA = r','
-
 t_LPAREN = r'\('
 t_RPAREN = r'\)'
-
 t_LBRACE = r'\{'
 t_RBRACE = r'\}'
-
 t_LBRACKET = r'\['
 t_RBRACKET = r'\]'
 
 
 # --------------------------------------------------
-# 7. STRINGS AND CHARACTER LITERALS
+# 5. STRINGS AND CHARACTER LITERALS
 # --------------------------------------------------
-# Function rules are tried in the order they are defined, so each
-# "valid" rule must come before the matching "error" rule.
-# All of these must be defined BEFORE lex.lex() is called.
 
 def t_STRING(t):
     r'"([^"\\\n]|\\.)*"'
@@ -146,54 +103,55 @@ def t_CHARACTER(t):
 def t_BAD_CHARACTER(t):
     r"'([^'\\\n]|\\.)*'?"
     text = t.value
+
     if len(text) == 2 and text[1] == "'":
         report_error(t, "Empty character literal")
     elif text.endswith("'") and len(text) > 1:
-        report_error(t, "Character literal must contain exactly one character")
+        report_error(
+            t,
+            "Character literal must contain exactly one character"
+        )
     else:
         report_error(t, "Unterminated character literal")
 
 
 # --------------------------------------------------
-# 8. NUMBERS
+# 6. NUMBERS AND INVALID IDENTIFIERS
 # --------------------------------------------------
 
 def t_NUMBER(t):
-    r'\d+(\.\d+)?'
+    r'\d+(\.\d+)?[A-Za-z_][A-Za-z0-9_]*|\d+(\.\d+)?'
+
+    if any(c.isalpha() or c == '_' for c in t.value):
+        report_error(
+            t,
+            f"Invalid identifier '{t.value}'. "
+            "Identifiers cannot start with a digit.",
+            error_type="Identifier Error"
+        )
+
     return t
 
 
 # --------------------------------------------------
-# 9. IDENTIFIERS AND KEYWORDS
+# 7. IDENTIFIERS AND KEYWORDS
 # --------------------------------------------------
 
 def t_IDENTIFIER(t):
     r'[A-Za-z_][A-Za-z0-9_]*'
-
-    if t.value in reserved:
-        t.type = reserved[t.value]
-
+    t.type = reserved.get(t.value, 'IDENTIFIER')
     return t
 
 
 # --------------------------------------------------
-# 10. IGNORE SPACES, TABS AND CARRIAGE RETURNS
+# 8. WHITESPACE, NEWLINES AND COMMENTS
 # --------------------------------------------------
 
 t_ignore = ' \t\r'
 
 
-# --------------------------------------------------
-# 11. LINE NUMBERS AND COMMENTS
-# --------------------------------------------------
-
-def t_newline(t):
-    r'\n+'
-    t.lexer.lineno += len(t.value)
-
-
 def t_COMMENT_SINGLE(t):
-    r'//.*'
+    r'//[^\n]*'
     pass
 
 
@@ -209,8 +167,13 @@ def t_COMMENT_UNTERMINATED(t):
     t.lexer.lineno += t.value.count('\n')
 
 
+def t_newline(t):
+    r'\n+'
+    t.lexer.lineno += len(t.value)
+
+
 # --------------------------------------------------
-# 12. INVALID CHARACTERS
+# 9. INVALID CHARACTERS
 # --------------------------------------------------
 
 def t_error(t):
@@ -219,20 +182,19 @@ def t_error(t):
 
 
 # --------------------------------------------------
-# 13. BUILD THE LEXER
+# 10. BUILD LEXER
 # --------------------------------------------------
 
 lexer = lex.lex()
 lexer.errors = []
 
 
+# --------------------------------------------------
+# 11. TOKENIZE SOURCE CODE
+# --------------------------------------------------
+
 def tokenize(code):
-    """Tokenize source code.
-
-    Returns (token_list, errors). A fresh clone of the lexer is used
-    for every call, so concurrent Flask requests do not share state.
-    """
-
+    """Return (token_list, errors) using a fresh lexer instance."""
     lx = lexer.clone()
     lx.errors = []
     lx.lineno = 1
@@ -241,10 +203,9 @@ def tokenize(code):
     token_list = []
 
     while True:
-
         token = lx.token()
 
-        if not token:
+        if token is None:
             break
 
         token_list.append({

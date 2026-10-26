@@ -470,8 +470,15 @@ validateBtn.addEventListener("click", async function () {
         const lexicalErrors = data.lexical_errors || [];
         const identifierErrors = data.identifier_errors || [];
         const bracketErrors = data.bracket_errors || [];
-        const totalErrors = lexicalErrors.length + identifierErrors.length + bracketErrors.length;
-        const isValid = (data.success !== undefined) ? data.success : (totalErrors === 0);
+        const syntaxErrors = data.syntax_errors || [];
+
+        const totalErrors =
+            lexicalErrors.length +
+            identifierErrors.length +
+            bracketErrors.length +
+            syntaxErrors.length;
+
+        const isValid = data.success === true;
 
         // -----------------------------------------------------
         // CARD 1: RENDER TOKENS
@@ -622,46 +629,61 @@ validateBtn.addEventListener("click", async function () {
         // -----------------------------------------------------
         // CARD 5: CFG / SYNTAX ANALYSIS (Ready for parser response)
         // -----------------------------------------------------
-        if (data.syntax_errors && data.syntax_errors.length > 0) {
-            syntaxAnalysisContainer.innerHTML = data.syntax_errors.map(err => `
+        if (syntaxErrors.length > 0) {
+            syntaxAnalysisContainer.innerHTML = syntaxErrors.map(err => `
                 <div class="card-issue">
                     <span class="card-issue-glyph">✕</span>
                     <div class="card-issue-body">
                         <div class="card-issue-title">Syntax Error</div>
                         <div class="card-issue-msg">${esc(err.message || "Grammar derivation failed")}</div>
-                        <div class="card-issue-pos">Line ${esc(err.line || 1)} · Expected token mismatch</div>
+                        <div class="card-issue-pos">Line ${esc(err.line || 1)}</div>
                     </div>
                 </div>
             `).join("");
+
             setPipelineStage(pipeCfg, "failed", "Syntax Err");
-        } else if (data.syntax_valid === true) {
+        } else if (data.parse_tree !== null && data.parse_tree !== undefined) {
             syntaxAnalysisContainer.innerHTML = `
                 <div class="card-success">
                     <span class="card-success-glyph">✓</span>
                     <div class="card-success-body">
                         <div class="card-success-title">Syntax Valid</div>
-                        <div class="card-success-msg">Mini-C program adheres to context-free grammar production rules.</div>
+                        <div class="card-success-msg">Mini-C program passed the parser.</div>
                     </div>
                 </div>
             `;
             setPipelineStage(pipeCfg, "passed", "Passed");
         } else {
-            // Default stage when parser module is under development
             setPipelineStage(pipeCfg, "ready-stage", "Ready");
         }
 
         // -----------------------------------------------------
         // CARD 6: PARSE TREE (Ready for Graphviz / SVG response)
         // -----------------------------------------------------
-        if (data.parse_tree_svg) {
-            parseTreeContainer.innerHTML = data.parse_tree_svg;
-            setPipelineStage(pipeTree, "passed", "Generated");
-        } else if (data.parse_tree_image) {
-            parseTreeContainer.innerHTML = `<img src="${esc(data.parse_tree_image)}" alt="Parse Tree" style="max-width: 100%; height: auto;">`;
-            setPipelineStage(pipeTree, "passed", "Generated");
-        } else {
-            setPipelineStage(pipeTree, "planned-stage", "Planned");
-        }
+        if (syntaxErrors.length > 0) {
+             parseTreeContainer.textContent =
+                 "Parse tree unavailable because syntax errors were detected.";
+             setPipelineStage(pipeTree, "failed", "Syntax Err");
+         } else if (data.parse_tree_svg) {
+             parseTreeContainer.innerHTML = data.parse_tree_svg;
+             setPipelineStage(pipeTree, "passed", "Generated");
+         } else if (data.parse_tree_image) {
+             const img = document.createElement("img");
+             img.src = data.parse_tree_image;
+             img.alt = "Parse Tree";
+             img.style.maxWidth = "100%";
+             img.style.height = "auto";
+             parseTreeContainer.replaceChildren(img);
+             setPipelineStage(pipeTree, "passed", "Generated");
+         } else if (data.parse_tree !== null && data.parse_tree !== undefined) {
+             parseTreeContainer.replaceChildren(
+                 buildTreeNode("Parse Tree", data.parse_tree)
+             );
+             setPipelineStage(pipeTree, "passed", "Generated");
+         } else {
+             parseTreeContainer.textContent = "No parse tree was returned.";
+             setPipelineStage(pipeTree, "planned-stage", "Planned");
+         }
 
         // -----------------------------------------------------
         // OVERALL STATS & SUMMARY
@@ -740,3 +762,46 @@ validateBtn.addEventListener("click", async function () {
         setLoading(false);
     }
 });
+
+function buildTreeNode(label, value) {
+    const item = document.createElement("li");
+    const node = document.createElement("div");
+    node.className = "tree-node";
+
+    const isGrammarNode =
+        Array.isArray(value) && typeof value[0] === "string";
+
+    node.textContent = isGrammarNode
+        ? value[0].replaceAll("_", " ")
+        : label;
+
+    item.appendChild(node);
+
+    const children = isGrammarNode
+        ? value.slice(1)
+        : Array.isArray(value)
+            ? value
+            : [];
+
+    if (children.length > 0) {
+        const list = document.createElement("ul");
+        list.className = "tree-children";
+
+        children.forEach((child, index) => {
+            list.appendChild(
+                buildTreeNode(`Element ${index + 1}`, child)
+            );
+        });
+
+        item.appendChild(list);
+    } else if (
+        value !== null &&
+        value !== undefined &&
+        !Array.isArray(value) &&
+        typeof value !== "object"
+    ) {
+        node.textContent = `${label}: ${String(value)}`;
+    }
+
+    return item;
+}
