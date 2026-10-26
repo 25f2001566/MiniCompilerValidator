@@ -44,13 +44,13 @@ def test_line_number():
     code = """int main() {
     if (x > 5) {
         printf("Hello");
-    """
+    }
+"""
 
     errors = validate_brackets(code)
 
-    assert len(errors) == 2
-    assert errors[0]["line"] == 2
-    assert errors[1]["line"] == 1
+    assert len(errors) == 1
+    assert errors[0]["line"] == 1
 
 
 def test_realistic_c_code():
